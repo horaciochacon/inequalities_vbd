@@ -1,0 +1,24 @@
+# VBD Peru Analysis Configuration
+# Configuration file for malaria and dengue analysis in Loreto, Peru
+
+default:
+  # Project settings
+  project:
+    name: "VBD Peru Analysis"
+    version: "1.0.0"
+    description: "Malaria and dengue analysis at Loreto level with small area estimation"
+    author: "Health Research Team"
+
+  # Geographic settings
+  geography:
+    region: "LORETO"
+    admin_level: "district"
+    coordinate_system: "EPSG:4326"
+
+  years: !expr 2009:2019
+
+  # Disease settings
+  diseases:
+    - malaria
+    - dengue
+

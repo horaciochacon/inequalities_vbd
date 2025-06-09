@@ -1,0 +1,59 @@
+Package: vbdperu
+Title: Malaria and Dengue Analysis for Loreto, Peru
+Version: 1.0.0
+Authors@R: 
+    person("Health Research Team", "Team", 
+           email = "research@example.com", 
+           role = c("aut", "cre"))
+Description: A comprehensive R analysis pipeline for studying malaria and dengue 
+    patterns in Loreto, Peru, with focus on small area estimation and health 
+    inequality assessment at the district level.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports:
+    config,
+    tidyverse,
+    dplyr,
+    ggplot2,
+    sf,
+    raster,
+    terra,
+    spdep,
+    INLA,
+    ggmap,
+    plotly,
+    leaflet,
+    DT,
+    knitr,
+    rmarkdown,
+    here,
+    readxl,
+    writexl,
+    janitor,
+    lubridate,
+    stringr,
+    purrr,
+    glue,
+    scales,
+    viridis,
+    RColorBrewer,
+    corrplot,
+    broom,
+    modelr,
+    rsample,
+    yardstick,
+    probably
+Suggests:
+    testthat (>= 3.0.0),
+    covr,
+    styler,
+    lintr,
+    devtools,
+    usethis,
+    pkgdown
+Config/testthat/edition: 3
+Depends: 
+    R (>= 4.1.0)
+LazyData: true
