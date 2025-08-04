@@ -1,193 +1,116 @@
+#!/usr/bin/env Rscript
+# VBD Peru Data Processing Pipeline
+# Script 01: Read and Process Epidemiological Surveillance Data
+
 # Load required libraries
-library(peruopen)
 library(tidyverse)
-library(readxl)
-library(innovar)
-library(viridis)
-library(scales)
-library(ggthemes)
+library(config)
+
+# Source custom functions
+source("R/data_import.R")
+source("R/population_processing.R")
+source("R/data_processing.R")
+source("R/visualization.R")
+source("R/utils.R")
 
 # Load configuration
 config <- config::get()
 
-# Get catalog
-catalogo <- po_catalog(extend_existing = TRUE)
+# Validate configuration
+validate_config(config)
 
-# Search for epidemiological surveillance data using diseases from config
-search <- po_search(
-  query = "vigilancia epidemio",
-  tags = config$diseases
+# Initialize logging
+init_logging(config)
+
+# Create output directories
+create_output_directories(config)
+
+# Log start of processing
+log_message("Starting VBD Peru data processing pipeline", "INFO", config)
+log_message(sprintf("Processing years: %d-%d", min(config$years), max(config$years)), "INFO", config)
+log_message(sprintf("Region: %s", config$geography$region), "INFO", config)
+
+# ---- 1. Import Surveillance Data ----
+log_message("Step 1: Importing surveillance data", "INFO", config)
+
+surveillance_data <- time_task(
+  import_surveillance_data(config, verbose = TRUE),
+  "Surveillance data import"
 )
 
-# Download selected resources
-data <- search$resources |>
-  as_tibble() |>
-  slice(2:3) |>
-  po_get()
+# ---- 2. Process Population Data ----
+log_message("Step 2: Processing population data", "INFO", config)
 
-# Combine datasets
-data <- bind_rows(data)
+population_data <- time_task(
+  process_population_data(config, verbose = TRUE),
+  "Population data processing"
+)
 
-# Process and aggregate data
-data_agg <- data |>
-  filter(
-    ano %in% config$years,
-    tipo_dx == "C",
-    departamento == config$geography$region
-    ) |>
-  group_by(
-    departamento, provincia, distrito, enfermedad, diagnostic,
-    diresa, ubigeo, ano
-  ) |>
-  summarise(casos = n()) |>
-  arrange(.by_group = TRUE)
+# Save population data
+save_data(population_data, "population_projections", config)
 
-# Aggregate
-data_grouped <- data_agg |>
-  ungroup() |>
-  select(year = ano, ubigeo, enfermedad, casos) |>
-  mutate(
-    enfermedad = case_when(
-      str_starts(enfermedad, "DENGUE")  ~ "dengue",
-      str_starts(enfermedad, "MALARIA") ~ "malaria"
-      )
-    ) |>
-  group_by(year, ubigeo, enfermedad) |>
-  summarise(n = sum(casos, na.rm = TRUE))
+# Generate population trend plots
+if (config$output$save_outputs) {
+  log_message("Generating population trend plots", "INFO", config)
+  pop_plots <- plot_population_trends(population_data, config, save_plots = TRUE)
+}
 
+# ---- 3. Process VBD Data ----
+log_message("Step 3: Processing VBD data", "INFO", config)
 
-# Population
-pop <- read_excel("data/projections.xlsx",skip = 4) |>
-  na.omit() |>
-    rename(ubigeo = 1, name = 2)
+vbd_data <- time_task(
+  process_vbd_data(surveillance_data, population_data, config, verbose = TRUE),
+  "VBD data processing"
+)
 
-# Filter loreto
-pop_loreto <- pop |>
-  filter(str_starts(ubigeo, "16") & !str_ends(ubigeo, "0")) |>
-  mutate(across(`2018`:`2025`, as.numeric))
+# Validate processed data
+if (!validate_vbd_data(vbd_data)) {
+  log_message("Data validation failed - please check warnings", "ERROR", config)
+  stop("Data validation failed")
+}
 
-pop_long <- pop_loreto |>
-  pivot_longer(`2018`:`2025`,names_to = "year", values_to = "pop") |>
-  mutate(year = as.numeric(year))
+# Save processed VBD data
+save_data(vbd_data, "vbd_district_year_disease", config)
 
-earlier_years <- 2010:2017
+# Print summary statistics
+print_vbd_summary(vbd_data, config)
 
-pop_completed <- pop_long %>%
-  group_by(ubigeo, name) %>%
-  nest() %>%                               # one tibble per district
-  mutate(
-    model = map(data, ~ lm(pop ~ year, data = .x)),
-    preds = map2(model, data, ~ {
-      new_years <- setdiff(earlier_years, .y$year)     # skip any year already present
-      if(length(new_years) == 0) return(tibble())      # nothing to add
-      tibble(year = new_years,
-             pop  = predict(.x, newdata = tibble(year = new_years)),
-             source = "predicted")
-    }),
-    observed = map(data, ~ mutate(.x, source = "observed"))
-  ) %>%
-  transmute(all = map2(observed, preds, bind_rows)) %>%
-  unnest(all) %>%                          # back to a flat long table
-  arrange(ubigeo, year) %>%
-  ungroup()
+# ---- 4. Generate Visualizations ----
+log_message("Step 4: Generating visualizations", "INFO", config)
 
+# Generate incidence trend plots
+if (config$output$save_outputs) {
+  log_message("Generating incidence trend plots", "INFO", config)
+  incidence_plots <- plot_incidence_trends(vbd_data, config, save_plots = TRUE)
+}
 
-# plot all districts
-
-plots_tbl <- pop_completed |>
-  group_by(name) |>
-  nest() |>
-  mutate(
-    plot = map(data, ~ {
-      ggplot(.x, aes(year, pop)) +
-        geom_line() +
-        geom_point() +
-        labs(title = unique(.x$name))
-    })
+# Generate disease maps
+for (disease in config$diseases) {
+  log_message(sprintf("Generating %s incidence map", disease), "INFO", config)
+  
+  map_plot <- time_task(
+    plot_disease_map(vbd_data, disease, config, save_plot = TRUE),
+    sprintf("%s map generation", stringr::str_to_title(disease))
   )
+}
 
-walk(plots_tbl$plot, print)
+# ---- 5. Final Summary ----
+log_message("Processing completed successfully", "INFO", config)
 
+# Print final summary
+summary_msg <- sprintf(
+  "Pipeline completed: %d districts, %d years, %d diseases processed",
+  n_distinct(vbd_data$ubigeo),
+  n_distinct(vbd_data$year),
+  n_distinct(vbd_data$enfermedad)
+)
 
-# Calculate incidence
-grid <- expand_grid(
-  ubigeo = unique(pop_completed$ubigeo),
-  year = 2010:2023,
-  enfermedad =c("dengue", "malaria")
-  )
+log_message(summary_msg, "INFO", config)
 
-
-data_vbd <- grid |>
-  left_join(pop_completed |> select(ubigeo, year, pop, name)) |>
-  mutate(pop = round(pop)) |>
-  left_join(data_grouped) |>
-  arrange(year, ubigeo) |>
-  select(year, ubigeo, name, enfermedad, n, pop) |>
-  mutate(n = ifelse(is.na(n), 0, n)) |>
-  mutate(incidence = n / pop * 1e3)
-
-
-data_vbd_nest <- data_vbd |>
-  group_by(name) |>
-  nest() |>
-  mutate(
-    plot = map(data, ~ {
-      .x |>
-        ggplot(aes(x = year, y = incidence, color = enfermedad)) +
-        geom_line() +
-        geom_point() +
-        theme_bw() +
-        labs(
-          x = "Year", y = "Incidence (per 1,000)", title = name
-        )
-    }
-
-    )
-  )
-
-data_vbd_nest$plot
-
-# plot map
-
-data("Peru")
-
-distritos <- Peru %>% filter(dep == "LORETO") %>% mutate(ubigeo = as.integer(ubigeo))
-data_vbd$ubigeo <- as.numeric(data_vbd$ubigeo)
-
-distritos_vbd <- distritos |>
-  left_join(data_vbd)
-
-distritos_vbd |>
-  filter(enfermedad == "malaria") |>
-  ggplot() +
-  geom_sf(
-    aes(fill = incidence),
-    color = "white",
-    size = 0.1
-    ) +
-  facet_wrap(.~year, ncol = 5 ) +
-  scale_fill_viridis(
-    direction = -1,
-    option = "D",
-    trans = "log1p",
-    breaks = c(1, 10, 100, 900)
-  ) +
-  theme_bw()
-
-distritos_vbd |>
-  filter(enfermedad == "dengue") |>
-  ggplot() +
-  geom_sf(
-    aes(fill = incidence),
-    color = "white",
-    size = 0.1
-  ) +
-  facet_wrap(.~year, ncol = 5 ) +
-  scale_fill_viridis(
-    direction = -1,
-    option = "D",
-    trans = "log1p",
-    breaks = c(1, 5, 20, 50)
-  ) +
-  theme_bw()
+# Return processed data for further use
+invisible(list(
+  surveillance_data = surveillance_data,
+  population_data = population_data,
+  vbd_data = vbd_data
+))
 

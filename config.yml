@@ -12,13 +12,101 @@ default:
   # Geographic settings
   geography:
     region: "LORETO"
+    region_code: "16"
     admin_level: "district"
     coordinate_system: "EPSG:4326"
 
+  # Time period settings
   years: !expr 2010:2023
+  population_projection_years: !expr 2010:2017
+  population_data_years: !expr 2018:2025
 
   # Disease settings
   diseases:
     - malaria
     - dengue
+  
+  # Data source settings
+  data_source:
+    query: "vigilancia epidemio"
+    resource_indices: [2, 3]
+    diagnosis_type: "C"
+    extend_catalog: true
+  
+  # Population data settings
+  population:
+    file_path: "data/projections.xlsx"
+    skip_rows: 4
+    projection_method: "linear"
+  
+  # Output settings
+  output:
+    save_outputs: true
+    output_formats: ["rds", "csv"]
+    
+    # Output directories
+    directories:
+      data: "output/data"
+      figures: "output/figures"
+      maps: "output/maps"
+      logs: "output/logs"
+    
+    # File naming
+    timestamp_outputs: false
+    prefix: "vbd_peru"
+  
+  # Visualization settings
+  visualization:
+    # Plot dimensions
+    figure_width: 12
+    figure_height: 8
+    dpi: 300
+    
+    # Theme settings
+    theme: "theme_bw"
+    
+    # Map visualization
+    maps:
+      malaria:
+        color_palette: "viridis"
+        palette_option: "D"
+        palette_direction: -1
+        transformation: "log1p"
+        breaks: [1, 10, 100, 900]
+        border_color: "white"
+        border_size: 0.1
+        facet_cols: 5
+      
+      dengue:
+        color_palette: "viridis"
+        palette_option: "D"
+        palette_direction: -1
+        transformation: "log1p"
+        breaks: [1, 5, 20, 50]
+        border_color: "white"
+        border_size: 0.1
+        facet_cols: 5
+    
+    # Time series plots
+    time_series:
+      line_size: 1
+      point_size: 2
+      axis_labels:
+        x: "Year"
+        y: "Incidence (per 1,000)"
+  
+  # Processing parameters
+  processing:
+    incidence_multiplier: 1000
+    aggregation_level: ["year", "ubigeo", "enfermedad"]
+    disease_mapping:
+      dengue_pattern: "^DENGUE"
+      malaria_pattern: "^MALARIA"
+  
+  # Logging settings
+  logging:
+    enable: true
+    level: "INFO"
+    log_file: "output/logs/vbd_peru_{date}.log"
+    console_output: true
 
