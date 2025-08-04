@@ -15,7 +15,7 @@ default:
     admin_level: "district"
     coordinate_system: "EPSG:4326"
 
-  years: !expr 2009:2019
+  years: !expr 2010:2023
 
   # Disease settings
   diseases:
